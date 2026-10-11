@@ -38,14 +38,6 @@
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\SmallTile.png" />
       </uap:VisualElements>
-      <Extensions>
-        <!-- Lets the iPhone reach the app on the local network without any firewall prompt. -->
-        <desktop2:Extension Category="windows.firewallRules">
-          <desktop2:FirewallRules Executable="WinDrop\WinDrop.exe">
-            <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="all" LocalPortMin="8765" LocalPortMax="8775" />
-          </desktop2:FirewallRules>
-        </desktop2:Extension>
-      </Extensions>
     </Application>
   </Applications>
 
@@ -53,4 +45,13 @@
     <Capability Name="privateNetworkClientServer" />
     <rescap:Capability Name="runFullTrust" />
   </Capabilities>
+
+  <!-- Package-level extension: lets the phone reach the app on the local network without any firewall prompt. -->
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="WinDrop\WinDrop.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP" Profile="all" LocalPortMin="8765" LocalPortMax="8775" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
 </Package>
