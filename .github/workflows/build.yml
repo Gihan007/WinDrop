@@ -44,6 +44,31 @@ jobs:
           if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
           & $iscc "/DAppVersion=$v" installer\windrop.iss
 
+      - name: Build Microsoft Store package (MSIX)
+        shell: pwsh
+        run: |
+          # Store edition: folder build (no torrent engine), packaged as MSIX. Microsoft signs it on upload.
+          pyinstaller --noconfirm --onedir --windowed --name WinDrop --icon assets/icon.ico `
+            --add-data "assets/icon.ico;assets" --distpath storebuild --workpath build-store src/app.py
+          $v = "1.0.0"
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          New-Item -ItemType Directory -Force msix | Out-Null
+          Copy-Item storebuild/WinDrop msix/WinDrop -Recurse
+          Copy-Item store/Assets msix/Assets -Recurse
+          (Get-Content store/AppxManifest.xml -Raw).Replace("__VERSION__", "$v.0") | Set-Content msix/AppxManifest.xml -Encoding utf8
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) { throw "makeappx.exe not found" }
+          & $makeappx.FullName pack /d msix /p "dist/WinDropX-$v.msix" /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
+          Compress-Archive -Path msix/* -DestinationPath "dist/WinDropX-$v-test-layout.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WinDropX-Microsoft-Store
+          path: |
+            dist/WinDropX-*.msix
+            dist/WinDropX-*-test-layout.zip
+
       - uses: actions/upload-artifact@v4
         with:
           name: WinDrop-windows

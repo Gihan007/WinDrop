@@ -223,6 +223,7 @@ async function loadTorrents() {
   let j;
   try { const r = await fetch(u('/torrent/list')); if (r.status === 401) return showGate(); if (!r.ok) return; j = await r.json(); } catch (e) { return; }
   const list = $('tlist');
+  if (j.reason === 'unsupported') { $('tsec').hidden = true; return; }
   if (!j.available) {
     $('go').disabled = true; list.innerHTML = '';
     list.append(el('li', 'empty', j.reason === 'off'

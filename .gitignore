@@ -223,3 +223,6 @@ __marimo__/
 vendor/
 aria2.zip
 aria2tmp/
+storebuild/
+build-store/
+msix/

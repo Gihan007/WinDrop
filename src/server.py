@@ -142,6 +142,7 @@ class DropServer:
         self.wrong, self.locked = {}, {}     # ip -> {bad_key: time}, ip -> unlock time
         self.public_block = set()            # local addresses on untrusted public networks
         self.downloads_enabled = False
+        self.downloads_supported = True      # False in the Microsoft Store edition
         self.partial = self.inbox / ".partial"
         self.port, self.on_event = port, on_event or (lambda *a: None)
         self.torrents = torrents
@@ -455,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/torrent/list":
             tm = drop.torrents
+            if not drop.downloads_supported:
+                return self.json(200, {"available": False, "reason": "unsupported", "items": []})
             if not drop.downloads_enabled:
                 return self.json(200, {"available": False, "reason": "off", "items": []})
             if not tm or not tm.available:

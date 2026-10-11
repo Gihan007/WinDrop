@@ -45,6 +45,10 @@ No Wi-Fi around? Turn on **Mobile hotspot** on the laptop (Settings > Network & 
 - **Laptop downloads are off by default.** When on, they can't target addresses inside your own network (like your router).
 - **Limitation:** transfers use plain `http`, so they're not encrypted. Use WinDrop on your home Wi-Fi or your own iPhone hotspot, not on café, airport or hotel Wi-Fi.
 
+## Microsoft Store edition
+
+The Store edition is called **WinDropX**. It's built automatically as an MSIX package by GitHub Actions (artifact *WinDropX-Microsoft-Store*). It doesn't include laptop downloads, and its firewall permission is part of the package, so it installs without any prompts. Submission text is in [`store/LISTING.md`](store/LISTING.md); privacy policy in [`PRIVACY.md`](PRIVACY.md).
+
 ## Run from source
 
 ```

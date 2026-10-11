@@ -17,7 +17,21 @@ import qrcode
 from server import DropServer, human, local_ips, safe_name
 from torrent import TorrentManager
 
-APP = "WinDrop"
+def is_packaged():
+    """True when running as the Microsoft Store (MSIX) version."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        length = ctypes.c_uint(0)
+        return ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) != 15700
+    except Exception:
+        return False
+
+
+STORE = is_packaged()
+APP = "WinDrop"                          # folder names stay the same in every edition
+NAME = "WinDropX" if STORE else "WinDrop"  # name shown to the user (matches the Store listing)
 VERSION = "1.2.0"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
@@ -114,6 +128,8 @@ class App:
         self.cfg.setdefault("devices", {})
         self.cfg.setdefault("trusted_networks", [])
         self.cfg.setdefault("downloads_enabled", False)
+        if STORE:
+            self.cfg["downloads_enabled"] = False
         save_config(self.cfg)
 
         emit = lambda *e: self.events.put(e)
@@ -123,10 +139,11 @@ class App:
         try:
             self.server.start()
         except OSError:
-            messagebox.showerror(APP, "WinDrop couldn't start because the network port is in use.\n"
+            messagebox.showerror(NAME, f"{NAME} couldn't start because the network port is in use.\n"
                                       "Close any other WinDrop window and try again.")
             root.destroy()
             return
+        self.server.downloads_supported = not STORE
 
         self.profiles = {}
         self.approvals, self.prompting = [], False
@@ -146,7 +163,7 @@ class App:
     # ---------- UI ----------
     def build_ui(self):
         r = self.root
-        r.title(APP)
+        r.title(NAME)
         r.configure(bg=BG)
         r.minsize(420, 560)
         try:
@@ -165,7 +182,7 @@ class App:
         wrap = tk.Frame(r, bg=BG, padx=20, pady=14)
         wrap.pack(fill="both", expand=True)
 
-        tk.Label(wrap, text=APP, bg=BG, fg=INK, font=("Segoe UI Semibold", 20)).pack(anchor="w")
+        tk.Label(wrap, text=NAME, bg=BG, fg=INK, font=("Segoe UI Semibold", 20)).pack(anchor="w")
         tk.Label(wrap, text="Scan with your iPhone camera to connect", bg=BG, fg=DIM,
                  font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 8))
 
@@ -211,9 +228,10 @@ class App:
                    command=lambda: open_folder(INBOX)).pack(side="left", fill="x", expand=True, padx=(6, 0), ipady=4)
 
         self.dl_var = tk.BooleanVar(value=self.cfg["downloads_enabled"])
-        ttk.Checkbutton(wrap, text="Allow laptop downloads (torrents and links) from the iPhone",
-                        variable=self.dl_var, command=lambda: self.set_downloads(self.dl_var.get())
-                        ).pack(anchor="w", pady=(12, 0))
+        if not STORE:
+            ttk.Checkbutton(wrap, text="Allow laptop downloads (torrents and links) from the iPhone",
+                            variable=self.dl_var, command=lambda: self.set_downloads(self.dl_var.get())
+                            ).pack(anchor="w", pady=(12, 0))
 
         tk.Label(wrap, text="Activity", bg=BG, fg=INK, font=("Segoe UI Semibold", 11)).pack(anchor="w", pady=(12, 4))
         box = tk.Frame(wrap, bg=CARD, highlightthickness=1, highlightbackground="#e3e5ea")
@@ -297,7 +315,7 @@ class App:
         name = self.profiles.get(ip, ("", ""))[0]
         if not name:
             return
-        if not messagebox.askyesno(APP, f"Trust “{name}”?\n\nOnly do this for your own hotspot or home Wi-Fi. "
+        if not messagebox.askyesno(NAME, f"Trust “{name}”?\n\nOnly do this for your own hotspot or home Wi-Fi. "
                                         f"Anyone on a trusted network can ask to connect (you still approve each device)."):
             return
         if name not in self.cfg["trusted_networks"]:
@@ -324,7 +342,7 @@ class App:
         r.attributes("-topmost", True)
         r.bell()
         allow = messagebox.askyesno(
-            APP, f"{info['name']} at {info['ip']} wants to connect to WinDrop.\n\n"
+            NAME, f"{info['name']} at {info['ip']} wants to connect to {NAME}.\n\n"
                  f"Allow it? Only allow your own devices or people you trust.", icon="warning", parent=r)
         r.attributes("-topmost", False)
         if allow:
@@ -366,7 +384,7 @@ class App:
                 fill()
 
         def remove_all():
-            if ids and messagebox.askyesno(APP, "Remove all devices? Each one will need approval again.", parent=win):
+            if ids and messagebox.askyesno(NAME, "Remove all devices? Each one will need approval again.", parent=win):
                 self.server.forget()
                 self.log("Removed all devices.")
                 fill()
@@ -385,7 +403,7 @@ class App:
                 self.dl_var.set(False)
                 self.server.downloads_enabled = False
                 if not quiet:
-                    messagebox.showwarning(APP, "The download engine couldn't start, so laptop downloads aren't available.")
+                    messagebox.showwarning(NAME, "The download engine couldn't start, so laptop downloads aren't available.")
                 return
         elif not on and self.torrents.available:
             self.torrents.stop()
@@ -417,17 +435,22 @@ class App:
 
     def help_connect(self):
         if self.ip_var.get() in self.server.public_block:
-            messagebox.showinfo(APP, "WinDrop is blocking this network because Windows marks it as public. "
+            messagebox.showinfo(NAME, f"{NAME} is blocking this network because Windows marks it as public. "
                                      "If it's your own hotspot or home Wi-Fi, click “Trust this network” at the top.")
             return
+        if STORE:
+            messagebox.showinfo(NAME, "Check that your iPhone and this PC are on the same Wi-Fi or hotspot, "
+                                      "then scan the QR code again.\n\nIf it still can't connect, restart the PC "
+                                      "once so Windows applies the app's network permission.")
+            return
         if sys.platform == "win32" and getattr(sys, "frozen", False):
-            if messagebox.askyesno(APP, "If your iPhone says the server stopped responding, Windows Firewall "
+            if messagebox.askyesno(NAME, "If your iPhone says the server stopped responding, Windows Firewall "
                                         "is usually blocking WinDrop.\n\nFix it now? Windows will ask for permission.\n\n"
                                         "Also check that your iPhone and laptop are on the same Wi-Fi or hotspot."):
                 self.fix_firewall()
         else:
-            messagebox.showinfo(APP, "Check that both devices are on the same Wi-Fi, and allow WinDrop "
-                                     "through Windows Firewall.")
+            messagebox.showinfo(NAME, "Check that both devices are on the same Wi-Fi or hotspot, and that WinDrop "
+                                     "is allowed through Windows Firewall.")
 
     def fix_firewall(self):
         import ctypes
@@ -444,7 +467,7 @@ class App:
                  else "Firewall fix was cancelled.")
 
     def new_link(self):
-        if not messagebox.askyesno(APP, "Create a new link and remove all allowed devices?\n\n"
+        if not messagebox.askyesno(NAME, "Create a new link and remove all allowed devices?\n\n"
                                         "Every phone will need to scan the new QR code and be approved again."):
             return
         self.cfg["token"] = new_token()
