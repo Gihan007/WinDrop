@@ -21,7 +21,7 @@ The first time you run it, Windows may show two warnings:
 4. **iPhone to laptop:** tap *Choose photos or files*. Files are saved to `Downloads\WinDrop`.
 5. **Laptop to iPhone:** click *Send files to iPhone…* in WinDrop, then tap *Refresh list* on the iPhone and tap a file to download it.
 
-6. **Download on laptop:** paste a magnet link, torrent link or any download link (or pick a `.torrent` file). The laptop downloads it and it appears under *Laptop to iPhone* when finished. Downloads go to `Downloads\WinDrop\Send to iPhone\Torrents`.
+6. **Download on laptop** (tick *Allow laptop downloads* in WinDrop first): paste a magnet link, torrent link or any download link (or pick a `.torrent` file). The laptop downloads it and it appears under *Laptop to iPhone* when finished. Downloads go to `Downloads\WinDrop\Send to iPhone\Torrents`.
 
 Big uploads from the iPhone are sent in pieces, several at once, and resume automatically if the connection drops or the phone locks. If a transfer pauses, choose the same file again to continue where it stopped.
 
@@ -37,10 +37,13 @@ No Wi-Fi around? Turn on **Mobile hotspot** on the laptop (Settings > Network & 
 
 ## Privacy and security
 
-- Files go straight from the phone to the laptop over your local network. Nothing is uploaded to the internet.
-- The QR code contains a private key. Other people on the same Wi-Fi can't use WinDrop without scanning it.
-- Click **New link** to disconnect every phone that connected before.
-- On public Wi-Fi (cafés, airports), close WinDrop when you're done.
+- **Files stay on your network.** They go straight from the phone to the laptop; nothing is uploaded to the internet.
+- **Every new device needs your approval.** The first time a phone connects, the laptop asks *"iPhone wants to connect. Allow?"* Nothing works until you click Allow. Manage allowed devices with the **Devices** button; devices unused for 30 days must be approved again.
+- **Unguessable link.** The QR code contains a 32-character key. After 10 wrong guesses, a device is blocked for 15 minutes.
+- **Public networks are blocked.** On networks Windows marks as public, WinDrop refuses connections until you click *Trust this network*. Only trust your own hotspot or home Wi-Fi.
+- **New link** creates a new key and removes every allowed device.
+- **Laptop downloads are off by default.** When on, they can't target addresses inside your own network (like your router).
+- **Limitation:** transfers use plain `http`, so they're not encrypted. Use WinDrop on your home Wi-Fi or your own iPhone hotspot, not on café, airport or hotel Wi-Fi.
 
 ## Run from source
 

@@ -4,6 +4,7 @@ aria2 runs as a hidden background process and is controlled over a private
 JSON-RPC connection that only this computer can reach.
 """
 import base64
+import ipaddress
 import json
 import os
 import secrets
@@ -16,6 +17,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 RISKY = {".exe", ".msi", ".bat", ".cmd", ".scr", ".com", ".ps1", ".vbs", ".js", ".jar", ".lnk", ".pif", ".reg"}
 KEYS = ["gid", "status", "totalLength", "completedLength", "downloadSpeed", "connections",
@@ -35,6 +37,22 @@ def find_aria2():
                 return b / n
     found = shutil.which("aria2c")
     return Path(found) if found else None
+
+
+def points_inside_network(url):
+    """True if a web link leads to this computer or the local network (router pages, other devices)."""
+    host = urlparse(url).hostname
+    if not host:
+        return True
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False  # unknown name: let the engine report the error
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return True
+    return False
 
 
 def free_port():
@@ -153,6 +171,8 @@ class TorrentManager:
         uri = uri.strip()
         if not (uri.startswith("magnet:?") or uri.startswith("http://") or uri.startswith("https://")):
             raise ValueError("Paste a magnet link or a link starting with http:// or https://")
+        if not uri.startswith("magnet:") and points_inside_network(uri):
+            raise ValueError("For safety, WinDrop won't download from addresses inside your own network.")
         gid = self.call("aria2.addUri", [uri])
         self.on_event("torrent_added", "magnet link" if uri.startswith("magnet:") else uri.rsplit("/", 1)[-1][:60], 0)
         return gid

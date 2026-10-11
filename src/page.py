@@ -8,6 +8,10 @@ font:17px/1.5 -apple-system,system-ui,sans-serif;text-align:center;padding:24px}
 
 LOCKED_PAGE = _NOTICE % "Open WinDrop on your laptop and scan its QR code with your iPhone camera to connect."
 MISSING_PAGE = _NOTICE % "That file is no longer on the laptop. Go back and tap Refresh list."
+LOCKOUT_PAGE = _NOTICE % ("Too many wrong connection attempts from this device. Wait 15 minutes, "
+                          "then scan the QR code in WinDrop on your laptop.")
+PUBLIC_PAGE = _NOTICE % ("WinDrop is blocking connections on this network because Windows marks it as public. "
+                         "If it's your own hotspot or home Wi-Fi, click “Trust this network” in WinDrop on your laptop, then reload.")
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head>
@@ -53,11 +57,24 @@ PAGE = r"""<!doctype html>
   .acts button { background:none; border:0; color:var(--blue); font-size:14px; padding:2px 0; cursor:pointer; }
   .warn { flex-basis:100%; color:var(--warn); font-size:13px; }
   .empty { color:var(--dim); font-size:15px; display:block; }
+  #gate { text-align:center; padding:48px 12px; }
+  #gate .spin { width:34px; height:34px; border:3px solid var(--line); border-top-color:var(--blue); border-radius:50%;
+                margin:0 auto 18px; animation:spin 1s linear infinite; }
+  #gate p { color:var(--dim); max-width:30ch; margin:8px auto 0; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { #gate .spin { animation:none; } }
+  #app[hidden], #gate[hidden] { display:none; }
   button.refresh { background:none; border:1px solid #333845; color:var(--ink); border-radius:10px; padding:8px 14px; font-size:15px; margin-top:12px; }
 </style></head>
 <body><main>
   <h1>WinDrop</h1>
   <p class="sub">Keep this page open and your screen on while files transfer.</p>
+  <div id="gate">
+    <div class="spin" id="gspin"></div>
+    <h2 id="gtitle">Waiting for approval</h2>
+    <p id="gtext">On your laptop, click <b>Allow</b> to let this iPhone connect. You only need to do this once.</p>
+  </div>
+  <div id="app" hidden>
 
   <section>
     <h2>iPhone to laptop</h2>
@@ -85,11 +102,18 @@ PAGE = r"""<!doctype html>
     <ul id="out"><li class="empty">Loading…</li></ul>
     <button class="refresh" id="refresh">Refresh list</button>
   </section>
+  </div>
 </main>
 <script>
 const K = new URLSearchParams(location.search).get('k') || (() => { try { return localStorage.getItem('wdk') || ''; } catch (e) { return ''; } })();
 try { if (K) localStorage.setItem('wdk', K); } catch (e) {}
-const u = p => K ? p + (p.includes('?') ? '&' : '?') + 'k=' + encodeURIComponent(K) : p;
+const D = (() => {
+  const make = () => { const a = new Uint8Array(18); crypto.getRandomValues(a);
+    return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+  try { let d = localStorage.getItem('wdd'); if (!d) { d = make(); localStorage.setItem('wdd', d); } return d; }
+  catch (e) { return make(); }
+})();
+const u = p => p + (p.includes('?') ? '&' : '?') + (K ? 'k=' + encodeURIComponent(K) + '&' : '') + 'd=' + encodeURIComponent(D);
 const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const size = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : n < 1073741824 ? (n/1048576).toFixed(1) + ' MB' : (n/1073741824).toFixed(2) + ' GB';
@@ -116,6 +140,8 @@ async function sendFile(file) {
     try {
       const r = await postJSON('/upload/init', { name: file.name, size: file.size, mtime: file.lastModified || 0 });
       if (r.status === 403) return fail('Link expired. Scan the QR code again.');
+      if (r.status === 401) { showGate(); return fail('Waiting for approval on the laptop.'); }
+      if (r.status === 507) return fail((await r.json()).error);
       if (!r.ok) throw 0;
       init = await r.json(); break;
     } catch (e) { if (tries > 5) return fail('Could not reach the laptop'); st.textContent = 'Connecting…'; await sleep(1500); }
@@ -143,7 +169,7 @@ async function sendFile(file) {
     x.upload.onprogress = e => inflight.set(i, e.loaded);
     x.onload = () => { inflight.delete(i);
       if (x.status === 200) { sent += pieceLen(i); res(); }
-      else if (x.status === 403 || x.status === 404) rej(Object.assign(new Error('fatal'), { fatal: x.status }));
+      else if (x.status === 403 || x.status === 404 || x.status === 401) rej(Object.assign(new Error('fatal'), { fatal: x.status }));
       else rej(new Error('retry')); };
     x.onerror = x.ontimeout = () => { inflight.delete(i); rej(new Error('net')); };
     x.send(file.slice(i * CS, i * CS + pieceLen(i)));
@@ -168,7 +194,7 @@ async function sendFile(file) {
     bar.style.width = '100%'; st.textContent = 'Sent, ' + size(file.size); row.classList.add('ok');
   } catch (e) {
     clearInterval(timer);
-    fail(e.fatal === 403 ? 'Link expired. Scan the QR code again.' : 'Paused. Choose the same file again to resume.');
+    fail(e.fatal === 403 ? 'Link expired. Scan the QR code again.' : e.fatal === 401 ? 'This device was removed on the laptop.' : 'Paused. Choose the same file again to resume.');
   }
 }
 
@@ -195,9 +221,15 @@ $('tfile').addEventListener('change', async () => {
 const finished = new Set(); let firstLoad = true;
 async function loadTorrents() {
   let j;
-  try { const r = await fetch(u('/torrent/list')); if (!r.ok) return; j = await r.json(); } catch (e) { return; }
+  try { const r = await fetch(u('/torrent/list')); if (r.status === 401) return showGate(); if (!r.ok) return; j = await r.json(); } catch (e) { return; }
   const list = $('tlist');
-  if (!j.available) { $('go').disabled = true; list.innerHTML = ''; list.append(el('li', 'empty', 'Downloads on the laptop aren\'t available in this copy of WinDrop.')); return; }
+  if (!j.available) {
+    $('go').disabled = true; list.innerHTML = '';
+    list.append(el('li', 'empty', j.reason === 'off'
+      ? 'Laptop downloads are turned off. To use them, tick "Allow laptop downloads" in WinDrop on your laptop.'
+      : 'Downloads on the laptop aren\'t available in this copy of WinDrop.'));
+    return;
+  }
   $('go').disabled = false;
   list.innerHTML = '';
   let newDone = false;
@@ -233,6 +265,7 @@ async function loadFiles() {
   try {
     const r = await fetch(u('/files'));
     if (r.status === 403) { out.innerHTML = ''; out.append(el('li', 'empty', 'Link expired. Scan the QR code in WinDrop again.')); return; }
+    if (r.status === 401) return showGate();
     const files = await r.json();
     out.innerHTML = '';
     if (!files.length) { out.append(el('li', 'empty', 'Nothing here yet. On the laptop, click "Send files to iPhone", or download something above.')); return; }
@@ -245,10 +278,31 @@ async function loadFiles() {
     }
   } catch (e) { out.innerHTML = ''; out.append(el('li', 'empty', 'Could not reach the laptop.')); }
 }
+/* ---------- approval gate ---------- */
+let ready = false, gateTimer = null;
+function showGate(title, text, keepChecking = true) {
+  ready = false; $('app').hidden = true; $('gate').hidden = false;
+  if (title) $('gtitle').textContent = title;
+  if (text) $('gtext').textContent = text;
+  $('gspin').style.display = keepChecking ? '' : 'none';
+  clearTimeout(gateTimer); gateTimer = keepChecking ? setTimeout(checkGate, 1500) : null;
+}
+async function checkGate() {
+  let st = 'error';
+  try { const r = await fetch(u('/hello')); st = r.status === 403 ? 'expired' : (await r.json()).state; } catch (e) {}
+  if (st === 'approved') {
+    clearTimeout(gateTimer); gateTimer = null;
+    $('gate').hidden = true; $('app').hidden = false;
+    if (!ready) { ready = true; loadFiles(); loadTorrents(); }
+  } else if (st === 'denied') showGate('Not allowed', 'The laptop declined this device. If that was a mistake, ask for the QR code to be scanned again after pressing New link.', false);
+  else if (st === 'expired') showGate('Link expired', 'Scan the QR code in WinDrop on your laptop again.', false);
+  else if (st === 'error') showGate('Can\'t reach the laptop', 'Make sure WinDrop is open and both devices are on the same network.');
+  else showGate('Waiting for approval', 'On your laptop, click Allow to let this iPhone connect. You only need to do this once.');
+}
 $('refresh').onclick = loadFiles;
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadFiles(); loadTorrents(); } });
-setInterval(() => { if (!document.hidden) loadTorrents(); }, 1500);
-loadFiles(); loadTorrents();
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ready) { loadFiles(); loadTorrents(); } });
+setInterval(() => { if (!document.hidden && ready) loadTorrents(); }, 1500);
+checkGate();
 </script>
 </body></html>
 """

@@ -25,6 +25,9 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip" -OutFile aria2.zip
+          $expected = "67D015301EEF0B612191212D564C5BB0A14B5B9C4796B76454276A4D28D9B288"
+          $actual = (Get-FileHash aria2.zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "aria2 download failed its integrity check ($actual)" }
           Expand-Archive aria2.zip -DestinationPath aria2tmp
           New-Item -ItemType Directory -Force vendor/aria2 | Out-Null
           Get-ChildItem aria2tmp -Recurse -Include aria2c.exe,COPYING,LICENSE.OpenSSL | Copy-Item -Destination vendor/aria2
