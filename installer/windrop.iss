@@ -16,7 +16,7 @@ SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\WinDrop.exe
 Compression=lzma2
 SolidCompression=yes
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 WizardStyle=modern
 
 [Tasks]
@@ -30,4 +30,9 @@ Name: "{autoprograms}\WinDrop"; Filename: "{app}\WinDrop.exe"
 Name: "{autodesktop}\WinDrop"; Filename: "{app}\WinDrop.exe"; Tasks: desktopicon
 
 [Run]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{app}\WinDrop.exe"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""WinDrop"" dir=in action=allow program=""{app}\WinDrop.exe"" enable=yes profile=any"; Flags: runhidden waituntilterminated
 Filename: "{app}\WinDrop.exe"; Description: "{cm:LaunchProgram,WinDrop}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{app}\WinDrop.exe"""; Flags: runhidden; RunOnceId: "RemoveFirewallRule"

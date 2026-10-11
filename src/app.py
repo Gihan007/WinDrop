@@ -16,7 +16,7 @@ import qrcode
 from server import DropServer, human, local_ips, safe_name
 
 APP = "WinDrop"
-VERSION = "1.0.1"
+VERSION = "1.0.3"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP
@@ -154,6 +154,7 @@ class App:
         foot.pack(fill="x", pady=(10, 0))
         tk.Label(foot, text=f"v{VERSION}", bg=BG, fg=DIM, font=("Segoe UI", 8)).pack(side="left")
         ttk.Button(foot, text="New link", command=self.new_link).pack(side="right")
+        ttk.Button(foot, text="Phone can't connect?", command=self.help_connect).pack(side="right", padx=(0, 6))
 
     def refresh_qr(self):
         url = self.server.url(self.ip_var.get())
@@ -192,6 +193,28 @@ class App:
                 except OSError as e:
                     self.events.put(("error", src.name, str(e)))
         threading.Thread(target=copy, daemon=True).start()
+
+    def help_connect(self):
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            if messagebox.askyesno(APP, "If your iPhone says the server stopped responding, Windows Firewall "
+                                        "is usually blocking WinDrop.\n\nFix it now? Windows will ask for permission.\n\n"
+                                        "Also check that your iPhone and laptop are on the same Wi-Fi or hotspot."):
+                self.fix_firewall()
+        else:
+            messagebox.showinfo(APP, "Check that both devices are on the same Wi-Fi, and allow WinDrop "
+                                     "through Windows Firewall on Private and Public networks.")
+
+    def fix_firewall(self):
+        import ctypes
+        exe = sys.executable
+        cmd = (f'/c netsh advfirewall firewall delete rule name=all program="{exe}" & '
+               f'netsh advfirewall firewall add rule name="WinDrop" dir=in action=allow '
+               f'program="{exe}" enable=yes profile=any')
+        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", cmd, None, 0)
+        if result > 32:
+            self.log("Firewall fixed. Scan the QR code again on your iPhone.")
+        else:
+            self.log("Firewall fix was cancelled.")
 
     def new_link(self):
         if not messagebox.askyesno(APP, "Create a new link? Phones that connected before will need to scan the new QR code."):

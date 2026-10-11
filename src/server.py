@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import socket
+import sys
 import threading
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,6 +57,17 @@ def human(n):
     return f"{n:.1f} TB"
 
 
+class _HTTPServer(ThreadingHTTPServer):
+    """On Windows, claim the port exclusively so no other program can answer in our place."""
+    daemon_threads = True
+    allow_reuse_address = sys.platform != "win32"
+
+    def server_bind(self):
+        if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class DropServer:
     """Owns the HTTP server. `on_event(kind, name, size)` is called from worker threads."""
 
@@ -71,13 +83,12 @@ class DropServer:
         last_error = None
         for port in range(self.port, self.port + tries):
             try:
-                self.httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+                self.httpd = _HTTPServer(("0.0.0.0", port), Handler)
                 break
             except OSError as e:
                 last_error = e
         if not self.httpd:
             raise last_error
-        self.httpd.daemon_threads = True
         self.httpd.drop = self
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
