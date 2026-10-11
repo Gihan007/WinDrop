@@ -17,7 +17,7 @@ from server import DropServer, human, local_ips, safe_name
 from torrent import TorrentManager
 
 APP = "WinDrop"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP

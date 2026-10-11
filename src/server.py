@@ -22,6 +22,7 @@ from page import LOCKED_PAGE, MISSING_PAGE, PAGE
 IO_CHUNK = 1024 * 1024
 UPLOAD_CHUNK = 8 * 1024 * 1024   # size of each piece of a resumable upload
 COOKIE = "wd"
+HASH_TORRENT = re.compile(r"^[0-9a-f]{40}\.torrent$")  # aria2's internal copies, kept for resuming
 RISKY = {".exe", ".msi", ".bat", ".cmd", ".scr", ".com", ".ps1", ".vbs", ".js", ".jar", ".lnk", ".pif", ".reg"}
 
 
@@ -185,7 +186,7 @@ class DropServer:
         for dirpath, dirs, files in os.walk(root):
             dirs[:] = [d for d in dirs if not d.startswith(".")]
             for fn in files:
-                if fn.startswith(".") or fn.endswith(".aria2"):
+                if fn.startswith(".") or fn.endswith(".aria2") or HASH_TORRENT.match(fn):
                     continue
                 p = Path(dirpath) / fn
                 if self._downloading(p):
@@ -220,7 +221,8 @@ class DropServer:
             return None
         if root not in p.parents or not p.is_file():
             return None
-        if any(part.startswith(".") for part in p.relative_to(root).parts) or p.name.endswith(".aria2"):
+        if any(part.startswith(".") for part in p.relative_to(root).parts) or p.name.endswith(".aria2") \
+                or HASH_TORRENT.match(p.name):
             return None
         if self._downloading(p):
             return None

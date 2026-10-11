@@ -55,7 +55,9 @@ class TorrentManager:
         self.secret = secrets.token_hex(16)
         self.url = None
         self.seen_done = set()
-        self.names = {}
+        self.rejected = {}
+        self.handled = set()          # link downloads that were swapped for a torrent or rejected
+        self.check_lock = threading.Lock()  # links that turned out to be web pages: gid -> summary
         self._stop = threading.Event()
         # Never send local RPC calls through a system proxy.
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -163,6 +165,9 @@ class TorrentManager:
         return gid
 
     def action(self, gid, what):
+        if gid in self.rejected:
+            self.rejected.pop(gid, None)
+            return
         if what == "pause":
             self.call("aria2.pause", gid)
         elif what == "resume":
@@ -212,6 +217,51 @@ class TorrentManager:
             except OSError:
                 pass
 
+    def _inspect_finished(self, t):
+        """Look inside a finished link download. A .torrent file starts the real download;
+        a web page is discarded with a helpful message. Returns True if it was handled."""
+        if t.get("bittorrent"):
+            return False
+        files = t.get("files") or []
+        if len(files) != 1 or not files[0].get("path"):
+            return False
+        path = Path(files[0]["path"])
+        try:
+            if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
+                return False
+            data = path.read_bytes()
+        except OSError:
+            return False
+        head = data[:1024].lstrip().lower()
+        if data.startswith(b"d") and b"4:info" in data:
+            try:
+                self.call("aria2.addTorrent", base64.b64encode(data).decode())
+            except RuntimeError:
+                return False
+            self._forget(t["gid"], path)
+            self.on_event("torrent_added", "torrent from link", 0)
+            return True
+        if head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<html" in head[:300]:
+            self._forget(t["gid"], path)
+            info = self.summarize(t)
+            info.update(status="error", done=0, total=0, name=info["name"] or "Link",
+                        error="That link opens a web page, not a download. On the website, long-press the "
+                              "magnet or download button, copy that link, and paste it here.")
+            self.rejected[t["gid"]] = info
+            self.on_event("torrent_error", info["name"], "the link was a web page")
+            return True
+        return False
+
+    def _forget(self, gid, path):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        try:
+            self.call("aria2.removeDownloadResult", gid)
+        except RuntimeError:
+            pass
+
     # ---------- status ----------
     def _raw(self):
         items = self.call("aria2.tellActive", KEYS)
@@ -247,32 +297,44 @@ class TorrentManager:
     def list(self):
         if not self.available:
             return []
-        out = []
-        for t in self._raw():
-            if t.get("followedBy") or t.get("status") == "removed":
-                continue  # magnet metadata step that has turned into the real download
-            out.append(self.summarize(t))
+        raws = [t for t in self._raw() if not t.get("followedBy") and t.get("status") != "removed"]
+        self._process(raws)
+        if self.handled:
+            raws = [t for t in self._raw() if not t.get("followedBy") and t.get("status") != "removed"]
+        out = [self.summarize(t) for t in raws if t["gid"] not in self.handled]
+        out += list(self.rejected.values())
         order = {"active": 0, "waiting": 1, "paused": 2, "error": 3, "complete": 4}
         out.sort(key=lambda x: order.get(x["status"], 5))
         return out
 
+    def _process(self, raws):
+        """Announce finished downloads and swap .torrent links for real torrents (thread-safe)."""
+        with self.check_lock:
+            for raw in raws:
+                it = self.summarize(raw)
+                key = it["gid"]
+                if key in self.seen_done:
+                    continue
+                if it["status"] == "complete" and not it["meta"]:
+                    self.seen_done.add(key)
+                    if self._inspect_finished(raw):
+                        self.handled.add(key)
+                        continue
+                    self.on_event("torrent_done", it["name"], it["total"])
+                    if it["risky"]:
+                        self.on_event("torrent_risky", it["name"], 0)
+                elif it["status"] == "error":
+                    self.seen_done.add(key)
+                    self.on_event("torrent_error", it["name"], it["error"] or "failed")
+
     def _watch(self):
         while not self._stop.wait(1.5):
             try:
-                items = [self.summarize(t) for t in self._raw() if not t.get("followedBy")]
+                raws = [t for t in self._raw() if not t.get("followedBy")]
             except Exception:
                 if self.proc and self.proc.poll() is not None:
                     self.available = False
                     self.on_event("torrent_error", "The torrent engine stopped", 0)
                     return
                 continue
-            for it in items:
-                key = it["gid"]
-                if it["status"] == "complete" and not it["meta"] and key not in self.seen_done:
-                    self.seen_done.add(key)
-                    self.on_event("torrent_done", it["name"], it["total"])
-                    if it["risky"]:
-                        self.on_event("torrent_risky", it["name"], 0)
-                elif it["status"] == "error" and key not in self.seen_done:
-                    self.seen_done.add(key)
-                    self.on_event("torrent_error", it["name"], it["error"] or "failed")
+            self._process(raws)
