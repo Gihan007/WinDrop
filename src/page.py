@@ -74,7 +74,7 @@ PAGE = r"""<!doctype html>
     <div class="row2">
       <button class="main" id="go">Download</button>
       <label class="link" for="tfile">Use .torrent file</label>
-      <input id="tfile" type="file" accept=".torrent,application/x-bittorrent">
+      <input id="tfile" type="file">
     </div>
     <div class="msg" id="tmsg"></div>
     <ul id="tlist"></ul>
