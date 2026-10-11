@@ -21,9 +21,19 @@ The first time you run it, Windows may show two warnings:
 4. **iPhone to laptop:** tap *Choose photos or files*. Files are saved to `Downloads\WinDrop`.
 5. **Laptop to iPhone:** click *Send files to iPhone…* in WinDrop, then tap *Refresh list* on the iPhone and tap a file to download it.
 
+6. **Download on laptop:** paste a magnet link, torrent link or any download link (or pick a `.torrent` file). The laptop downloads it and it appears under *Laptop to iPhone* when finished. Downloads go to `Downloads\WinDrop\Send to iPhone\Torrents`.
+
+Big uploads from the iPhone are sent in pieces, several at once, and resume automatically if the connection drops or the phone locks. If a transfer pauses, choose the same file again to continue where it stopped.
+
 Tip: in Safari, tap Share, then *Add to Home Screen* to open WinDrop like an app next time.
 
 No Wi-Fi around? Turn on **Mobile hotspot** on the laptop (Settings > Network & Internet), join it from the iPhone, and pick the hotspot address (usually `192.168.137.1`) in WinDrop's *Network address* menu.
+
+## About laptop downloads
+
+- Laptop downloads use the **laptop's internet connection**. If the laptop is on your iPhone's hotspot, they use your mobile data.
+- Seeding (sharing back to other people) stops as soon as a torrent finishes.
+- Only download content you have the right to download. Torrents are a common way malware spreads; WinDrop flags program files such as `.exe` so you can think twice before opening them.
 
 ## Privacy and security
 
@@ -53,6 +63,10 @@ git push origin v1.0.0
 ```
 
 A few minutes later, `WinDrop-Setup.exe` and `WinDrop.exe` appear on the Releases page.
+
+## Third-party software
+
+Laptop downloads are powered by [aria2](https://github.com/aria2/aria2) (GPL-2.0, with OpenSSL exception), which is downloaded during the build and shipped unmodified as a separate program. Its license files are included in the app bundle.
 
 ## License
 

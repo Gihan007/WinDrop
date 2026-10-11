@@ -14,9 +14,10 @@ from tkinter import filedialog, messagebox, ttk
 import qrcode
 
 from server import DropServer, human, local_ips, safe_name
+from torrent import TorrentManager
 
 APP = "WinDrop"
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP
@@ -68,13 +69,16 @@ class App:
         self.cfg.setdefault("port", 8765)
         save_config(self.cfg)
 
+        self.torrents = TorrentManager(OUTBOX / "Torrents", CONFIG_DIR, on_event=lambda *e: self.events.put(e))
+        self.torrents_ok = self.torrents.start()
         self.server = DropServer(INBOX, OUTBOX, self.cfg["token"], self.cfg["port"],
-                                 on_event=lambda *e: self.events.put(e))
+                                 on_event=lambda *e: self.events.put(e), torrents=self.torrents)
         try:
             self.server.start()
         except OSError:
             messagebox.showerror(APP, "WinDrop couldn't start because the network port is in use.\n"
                                       "Close any other WinDrop window and try again.")
+            self.torrents.stop()
             root.destroy()
             return
 
@@ -83,6 +87,8 @@ class App:
         self.build_ui()
         self.refresh_qr()
         self.log(f"Ready. Files from your iPhone are saved to {INBOX}")
+        if not self.torrents_ok:
+            self.log("Torrent downloads are unavailable (download engine not found).")
         root.protocol("WM_DELETE_WINDOW", self.quit)
         root.after(200, self.poll)
 
@@ -207,9 +213,13 @@ class App:
     def fix_firewall(self):
         import ctypes
         exe = sys.executable
+        engine = CONFIG_DIR / "engine" / "aria2c.exe"
         cmd = (f'/c netsh advfirewall firewall delete rule name=all program="{exe}" & '
                f'netsh advfirewall firewall add rule name="WinDrop" dir=in action=allow '
-               f'program="{exe}" enable=yes profile=any')
+               f'program="{exe}" enable=yes profile=any & '
+               f'netsh advfirewall firewall delete rule name=all program="{engine}" & '
+               f'netsh advfirewall firewall add rule name="WinDrop downloads" dir=in action=allow '
+               f'program="{engine}" enable=yes profile=any')
         result = ctypes.windll.shell32.ShellExecuteW(None, "runas", "cmd.exe", cmd, None, 0)
         if result > 32:
             self.log("Firewall fixed. Scan the QR code again on your iPhone.")
@@ -239,6 +249,14 @@ class App:
                     if name not in self.connected:
                         self.connected.add(name)
                         self.log("📱  Phone connected")
+                elif kind == "torrent_added":
+                    self.log(f"⇣  Laptop download started  {name}")
+                elif kind == "torrent_done":
+                    self.log(f"✓  Download finished  {name}  ({human(extra)}). Ready for iPhone.")
+                elif kind == "torrent_risky":
+                    self.log(f"⚠  {name} contains a program file. Only open it if you trust the source.")
+                elif kind == "torrent_error":
+                    self.log(f"!  Download failed  {name}: {extra}")
                 elif kind == "error":
                     self.log(f"!  Couldn't add {name}: {extra}")
         except queue.Empty:
@@ -247,6 +265,7 @@ class App:
 
     def quit(self):
         self.server.stop()
+        self.torrents.stop()
         self.root.destroy()
 
 

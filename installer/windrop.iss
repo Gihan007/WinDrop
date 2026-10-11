@@ -32,7 +32,10 @@ Name: "{autodesktop}\WinDrop"; Filename: "{app}\WinDrop.exe"; Tasks: desktopicon
 [Run]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{app}\WinDrop.exe"""; Flags: runhidden waituntilterminated
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""WinDrop"" dir=in action=allow program=""{app}\WinDrop.exe"" enable=yes profile=any"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{userappdata}\WinDrop\engine\aria2c.exe"""; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""WinDrop downloads"" dir=in action=allow program=""{userappdata}\WinDrop\engine\aria2c.exe"" enable=yes profile=any"; Flags: runhidden waituntilterminated
 Filename: "{app}\WinDrop.exe"; Description: "{cm:LaunchProgram,WinDrop}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{app}\WinDrop.exe"""; Flags: runhidden; RunOnceId: "RemoveFirewallRule"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=all program=""{userappdata}\WinDrop\engine\aria2c.exe"""; Flags: runhidden; RunOnceId: "RemoveEngineRule"
