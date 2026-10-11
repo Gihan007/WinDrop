@@ -47,7 +47,7 @@ No Wi-Fi around? Turn on **Mobile hotspot** on the laptop (Settings > Network & 
 
 ## Microsoft Store edition
 
-The Store edition is called **WinDropX**. It's built automatically as an MSIX package by GitHub Actions (artifact *WinDropX-Microsoft-Store*). It doesn't include laptop downloads, and its firewall permission is part of the package, so it installs without any prompts. Submission text is in [`store/LISTING.md`](store/LISTING.md); privacy policy in [`PRIVACY.md`](PRIVACY.md).
+The Store edition is called **WinDrop X** (Store ID 9P8DP2ZLS077). It's built automatically as an MSIX package by GitHub Actions (artifact *WinDropX-Microsoft-Store*). It doesn't include laptop downloads, and its firewall permission is part of the package, so it installs without any prompts. Submission text is in [`store/LISTING.md`](store/LISTING.md); privacy policy in [`PRIVACY.md`](PRIVACY.md).
 
 ## Run from source
 

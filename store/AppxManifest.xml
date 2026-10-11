@@ -8,13 +8,13 @@
   IgnorableNamespaces="uap desktop2 rescap">
 
   <Identity
-    Name="Gihan.WinDropX"
+    Name="Gihan.477583E76BDD8"
     Publisher="CN=C6DDABAA-0B5C-4C9B-BA9D-72148E68EEA5"
     Version="__VERSION__"
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>WinDropX</DisplayName>
+    <DisplayName>WinDrop X</DisplayName>
     <PublisherDisplayName>Gihan</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Send photos, videos and files between your iPhone and this PC over Wi-Fi.</Description>
@@ -31,7 +31,7 @@
   <Applications>
     <Application Id="WinDropX" Executable="WinDrop\WinDrop.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="WinDropX"
+        DisplayName="WinDrop X"
         Description="Send photos, videos and files between your iPhone and this PC over Wi-Fi."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"

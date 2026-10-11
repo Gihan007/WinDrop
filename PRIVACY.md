@@ -2,7 +2,7 @@
 
 _Last updated: October 2026_
 
-WinDrop (sold in the Microsoft Store as **WinDropX**) lets you send files between your phone and your Windows PC over your own Wi-Fi network.
+WinDrop (sold in the Microsoft Store as **WinDrop X**) lets you send files between your phone and your Windows PC over your own Wi-Fi network.
 
 ## What we collect
 

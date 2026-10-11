@@ -31,8 +31,8 @@ def is_packaged():
 
 STORE = is_packaged()
 APP = "WinDrop"                          # folder names stay the same in every edition
-NAME = "WinDropX" if STORE else "WinDrop"  # name shown to the user (matches the Store listing)
-VERSION = "1.2.0"
+NAME = "WinDrop X" if STORE else "WinDrop"  # name shown to the user (matches the Store listing)
+VERSION = "1.2.3"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP
