@@ -135,34 +135,38 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     # ---- routes ----
+    def deny(self):
+        self.reply(403, LOCKED_PAGE.encode(), "text/html; charset=utf-8")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+
     def do_GET(self):
         drop = self.server.drop
         u = urlparse(self.path)
+        path = u.path or "/"
         how = self.auth(parse_qs(u.query))
 
-        if u.path == "/":
-            if how == "query":
-                # Remember this phone, then drop the key from the address bar.
-                cookie = f"{COOKIE}={drop.token}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax"
-                return self.reply(303, b"", "text/plain", [("Set-Cookie", cookie), ("Location", "/")])
+        if path in ("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+            return self.reply(204, b"", "image/x-icon")
+
+        if path == "/files":
             if not how:
-                return self.reply(403, LOCKED_PAGE.encode(), "text/html; charset=utf-8")
-            return self.reply(200, PAGE.encode(), "text/html; charset=utf-8")
-
-        if not how:
-            return self.reply(403, b"Scan the QR code in WinDrop on your laptop.", "text/plain")
-
-        if u.path == "/files":
+                return self.deny()
             files = [{"name": f.name, "size": f.stat().st_size}
                      for f in drop.outbox.iterdir() if f.is_file() and not f.name.startswith(".")]
             files.sort(key=lambda x: x["name"].lower())
             return self.reply(200, json.dumps(files).encode(), "application/json")
 
-        if u.path.startswith("/dl/"):
-            name = safe_name(unquote(u.path[4:]))
+        if path.startswith("/dl/"):
+            if not how:
+                return self.deny()
+            name = safe_name(unquote(path[4:]))
             p = drop.outbox / name
             if not p.is_file():
-                return self.reply(404, b"File not found", "text/plain")
+                return self.reply(404, MISSING_PAGE.encode(), "text/html; charset=utf-8")
             size = p.stat().st_size
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
@@ -178,15 +182,22 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             return
 
-        self.reply(404, b"Not found", "text/plain")
+        # Any other address shows the main page, so odd browser behaviour can't cause "Not found".
+        if not how:
+            return self.deny()
+        headers = []
+        if how == "query":
+            headers.append(("Set-Cookie", f"{COOKIE}={drop.token}; Max-Age=31536000; Path=/; SameSite=Lax"))
+        drop.on_event("connected", self.headers.get("User-Agent", ""), 0)
+        return self.reply(200, PAGE.encode(), "text/html; charset=utf-8", headers)
 
     def do_POST(self):
         drop = self.server.drop
         u = urlparse(self.path)
         if not self.auth(parse_qs(u.query)):
-            return self.reply(403, b"Scan the QR code in WinDrop on your laptop.", "text/plain")
+            return self.deny()
         if u.path != "/upload":
-            return self.reply(404, b"Not found", "text/plain")
+            return self.reply(404, MISSING_PAGE.encode(), "text/html; charset=utf-8")
 
         name = safe_name(unquote(self.headers.get("X-Filename", "file")))
         try:
@@ -207,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
             remaining = remaining or 1
         if remaining > 0 or length == 0:
             dest.unlink(missing_ok=True)
-            return self.reply(400, b"Upload incomplete", "text/plain")
+            return self.reply(400, b'{"error": "incomplete"}', "application/json")
         drop.on_event("received", dest.name, length)
         self.reply(200, json.dumps({"saved": dest.name}).encode(), "application/json")
 
@@ -217,6 +228,10 @@ LOCKED_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1115;color:#eef0f4;
 font:17px/1.5 -apple-system,system-ui,sans-serif;text-align:center;padding:24px}p{color:#8b91a0;max-width:30ch}</style>
 </head><body><div><h1>WinDrop</h1><p>Open WinDrop on your laptop and scan its QR code with your iPhone camera to connect.</p></div></body></html>"""
+
+MISSING_PAGE = LOCKED_PAGE.replace(
+    "Open WinDrop on your laptop and scan its QR code with your iPhone camera to connect.",
+    "That file is no longer on the laptop. Go back and tap Refresh list.")
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head>
@@ -266,6 +281,9 @@ PAGE = r"""<!doctype html>
   </section>
 </main>
 <script>
+const K = new URLSearchParams(location.search).get('k') || (() => { try { return localStorage.getItem('wdk') || ''; } catch (e) { return ''; } })();
+try { if (K) localStorage.setItem('wdk', K); } catch (e) {}
+const Q = K ? '?k=' + encodeURIComponent(K) : '';
 const pick = document.getElementById('pick'), queue = document.getElementById('queue');
 const size = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(1) + ' KB' : n < 1073741824 ? (n/1048576).toFixed(1) + ' MB' : (n/1073741824).toFixed(2) + ' GB';
 
@@ -282,7 +300,7 @@ function send(file) {
     queue.prepend(row);
     const bar = row.querySelector('i'), st = row.querySelector('.s');
     const x = new XMLHttpRequest();
-    x.open('POST', '/upload');
+    x.open('POST', '/upload' + Q);
     x.setRequestHeader('X-Filename', encodeURIComponent(file.name));
     x.upload.onprogress = e => { if (e.lengthComputable) { const p = e.loaded / e.total * 100; bar.style.width = p + '%'; st.textContent = Math.round(p) + '%'; } };
     x.onload = () => {
@@ -299,14 +317,14 @@ function send(file) {
 async function loadFiles() {
   const out = document.getElementById('out');
   try {
-    const r = await fetch('/files');
+    const r = await fetch('/files' + Q);
     if (r.status === 403) { out.innerHTML = '<li class="empty">Link expired. Scan the QR code in WinDrop again.</li>'; return; }
     const files = await r.json();
     out.innerHTML = '';
     if (!files.length) { out.innerHTML = '<li class="empty">Nothing here yet. On the laptop, click "Send files to iPhone", then tap Refresh.</li>'; return; }
     for (const f of files) {
       const li = document.createElement('li'), a = document.createElement('a'), s = document.createElement('span');
-      a.href = '/dl/' + encodeURIComponent(f.name); a.textContent = f.name; a.download = f.name;
+      a.href = '/dl/' + encodeURIComponent(f.name) + Q; a.textContent = f.name; a.download = f.name;
       s.className = 's'; s.textContent = size(f.size);
       li.append(a, s); out.append(li);
     }

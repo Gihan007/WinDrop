@@ -16,7 +16,7 @@ import qrcode
 from server import DropServer, human, local_ips, safe_name
 
 APP = "WinDrop"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP
@@ -78,6 +78,7 @@ class App:
             root.destroy()
             return
 
+        self.connected = set()
         self.ips = local_ips()
         self.build_ui()
         self.refresh_qr()
@@ -211,6 +212,10 @@ class App:
                     self.log(f"↑  Sent to iPhone  {name}")
                 elif kind == "queued":
                     self.log(f"•  Ready for iPhone  {name}  (tap Refresh in Safari)")
+                elif kind == "connected":
+                    if name not in self.connected:
+                        self.connected.add(name)
+                        self.log("📱  Phone connected")
                 elif kind == "error":
                     self.log(f"!  Couldn't add {name}: {extra}")
         except queue.Empty:
