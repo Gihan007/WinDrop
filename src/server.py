@@ -143,6 +143,7 @@ class DropServer:
         self.public_block = set()            # local addresses on untrusted public networks
         self.downloads_enabled = False
         self.downloads_supported = True      # False in the Microsoft Store edition
+        self.name = "WinDrop"                # app name shown on the phone page
         self.partial = self.inbox / ".partial"
         self.port, self.on_event = port, on_event or (lambda *a: None)
         self.torrents = torrents
@@ -480,7 +481,8 @@ class Handler(BaseHTTPRequestHandler):
         if how == "query":
             headers.append(("Set-Cookie", f"{COOKIE}={drop.token}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax"))
         drop.on_event("connected", self.headers.get("User-Agent", ""), 0)
-        return self.reply(200, PAGE.encode(), "text/html; charset=utf-8", headers)
+        page = PAGE if drop.name == "WinDrop" else PAGE.replace("WinDrop", drop.name)
+        return self.reply(200, page.encode(), "text/html; charset=utf-8", headers)
 
     def send_file(self, p):
         size = p.stat().st_size

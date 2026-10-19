@@ -32,8 +32,19 @@ jobs:
           New-Item -ItemType Directory -Force vendor/aria2 | Out-Null
           Get-ChildItem aria2tmp -Recurse -Include aria2c.exe,COPYING,LICENSE.OpenSSL | Copy-Item -Destination vendor/aria2
 
+      - name: Download croc (far transfers)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/schollz/croc/releases/download/v10.7.0/croc_v10.7.0_Windows-64bit.zip" -OutFile croc.zip
+          $expected = "0EB2755CE9E73C172EC306167F3274C11B6D96DE10F71A13ABC7C0A2DB7CD26A"
+          $actual = (Get-FileHash croc.zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "croc download failed its integrity check ($actual)" }
+          Expand-Archive croc.zip -DestinationPath croctmp
+          New-Item -ItemType Directory -Force vendor/croc | Out-Null
+          Copy-Item croctmp/croc.exe, croctmp/LICENSE -Destination vendor/croc
+
       - name: Build WinDrop.exe
-        run: pyinstaller --noconfirm --onefile --windowed --name WinDrop --icon assets/icon.ico --add-data "assets/icon.ico;assets" --add-data "vendor/aria2;aria2" src/app.py
+        run: pyinstaller --noconfirm --onefile --windowed --name WinDrop --icon assets/icon.ico --add-data "assets/icon.ico;assets" --add-data "vendor/aria2;aria2" --add-data "vendor/croc;croc" src/app.py
 
       - name: Build installer
         shell: pwsh
@@ -49,7 +60,7 @@ jobs:
         run: |
           # Store edition: folder build (no torrent engine), packaged as MSIX. Microsoft signs it on upload.
           pyinstaller --noconfirm --onedir --windowed --name WinDrop --icon assets/icon.ico `
-            --add-data "assets/icon.ico;assets" --distpath storebuild --workpath build-store src/app.py
+            --add-data "assets/icon.ico;assets" --add-data "vendor/croc;croc" --distpath storebuild --workpath build-store src/app.py
           $v = "1.0.0"
           if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
           New-Item -ItemType Directory -Force msix | Out-Null

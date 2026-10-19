@@ -16,6 +16,7 @@ import qrcode
 
 from server import DropServer, human, local_ips, safe_name
 from torrent import TorrentManager
+import far
 
 def is_packaged():
     """True when running as the Microsoft Store (MSIX) version."""
@@ -32,11 +33,13 @@ def is_packaged():
 STORE = is_packaged()
 APP = "WinDrop"                          # folder names stay the same in every edition
 NAME = "WinDrop X" if STORE else "WinDrop"  # name shown to the user (matches the Store listing)
-VERSION = "1.2.3"
+VERSION = "1.3.0"
 INBOX = Path.home() / "Downloads" / APP
 OUTBOX = INBOX / "Send to iPhone"
 CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home() / ".config")) / APP
 CONFIG = CONFIG_DIR / "config.json"
+FAR_INBOX = INBOX / "From far away"   # files received from another laptop over the internet
+FAR_WORK = INBOX / ".far"             # unfinished far transfers (kept so they can resume)
 
 BG, CARD, INK, DIM, BLUE = "#f6f7f9", "#ffffff", "#15171c", "#6b7280", "#2f6fec"
 WARN_BG, WARN_INK = "#fff4dc", "#7a4b00"
@@ -144,9 +147,12 @@ class App:
             root.destroy()
             return
         self.server.downloads_supported = not STORE
+        self.server.name = NAME
 
         self.profiles = {}
         self.approvals, self.prompting = [], False
+        self.far_jobs = []
+        self.approval_window = None
         self.connected = set()
         self.ips = local_ips()
         self.build_ui()
@@ -226,6 +232,12 @@ class App:
                    command=self.add_files).pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=4)
         ttk.Button(btns, text="Open received files",
                    command=lambda: open_folder(INBOX)).pack(side="left", fill="x", expand=True, padx=(6, 0), ipady=4)
+        far_row = tk.Frame(wrap, bg=BG)
+        far_row.pack(fill="x", pady=(6, 0))
+        ttk.Button(far_row, text="Send to a far laptop…",
+                   command=self.far_send).pack(side="left", fill="x", expand=True, padx=(0, 6), ipady=2)
+        ttk.Button(far_row, text="Receive with a code…",
+                   command=self.far_receive).pack(side="left", fill="x", expand=True, padx=(6, 0), ipady=2)
 
         self.dl_var = tk.BooleanVar(value=self.cfg["downloads_enabled"])
         if not STORE:
@@ -238,7 +250,7 @@ class App:
         box.pack(fill="both", expand=True)
         self.activity = tk.Listbox(box, bg=CARD, fg=INK, borderwidth=0, highlightthickness=0,
                                    font=("Segoe UI", 9), activestyle="none", selectbackground="#dbe6fd",
-                                   selectforeground=INK, height=4)
+                                   selectforeground=INK, height=3)
         sb = ttk.Scrollbar(box, command=self.activity.yview)
         self.activity.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -336,15 +348,7 @@ class App:
         if did not in self.server.pending:
             return self.root.after(50, self.next_approval)
         self.prompting = True
-        r = self.root
-        r.deiconify()
-        r.lift()
-        r.attributes("-topmost", True)
-        r.bell()
-        allow = messagebox.askyesno(
-            NAME, f"{info['name']} at {info['ip']} wants to connect to {NAME}.\n\n"
-                 f"Allow it? Only allow your own devices or people you trust.", icon="warning", parent=r)
-        r.attributes("-topmost", False)
+        allow = self.ask_allow(info)
         if allow:
             self.server.approve(did)
             self.log(f"✓  Allowed {info['name']} ({info['ip']})")
@@ -353,6 +357,60 @@ class App:
             self.log(f"✕  Declined {info['name']} ({info['ip']})")
         self.prompting = False
         self.root.after(50, self.next_approval)
+
+    def ask_allow(self, info):
+        """Approval window with clear Allow / Don't allow buttons (matches the wording on the phone)."""
+        r = self.root
+        r.deiconify()
+        dlg = tk.Toplevel(r)
+        dlg.title(NAME)
+        dlg.configure(bg="white")
+        dlg.resizable(False, False)
+        dlg.transient(r)
+        try:
+            dlg.iconbitmap(resource("assets/icon.ico"))
+        except Exception:
+            pass
+        body = tk.Frame(dlg, bg="white", padx=22, pady=20)
+        body.pack(fill="both")
+        icon = tk.Canvas(body, width=34, height=48, bg="white", highlightthickness=0)
+        icon.create_rectangle(4, 2, 30, 46, outline=BLUE, width=3)
+        icon.create_line(13, 40, 21, 40, fill=BLUE, width=3)
+        icon.pack(side="left", anchor="n", padx=(0, 16))
+        text = tk.Frame(body, bg="white")
+        text.pack(side="left", fill="x")
+        tk.Label(text, text=f"{info['name']} wants to connect", bg="white", fg=INK,
+                 font=("Segoe UI Semibold", 12)).pack(anchor="w")
+        tk.Label(text, text=f"From {info['ip']} on your network.\nOnly allow your own devices or people you trust.",
+                 bg="white", fg=DIM, font=("Segoe UI", 10), justify="left").pack(anchor="w", pady=(4, 0))
+        bar = tk.Frame(dlg, bg="#f3f3f3", padx=16, pady=12)
+        bar.pack(fill="x")
+        result = {"allow": False}
+
+        def finish(value):
+            result["allow"] = value
+            dlg.grab_release()
+            dlg.destroy()
+        ttk.Button(bar, text="Don't allow", command=lambda: finish(False)).pack(side="right")
+        ttk.Button(bar, text="Allow", style="Accent.TButton", command=lambda: finish(True)).pack(side="right", padx=(0, 8))
+        dlg.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        dlg.bind("<Escape>", lambda e: finish(False))
+        dlg.update_idletasks()
+        x = r.winfo_rootx() + (r.winfo_width() - dlg.winfo_reqwidth()) // 2
+        y = r.winfo_rooty() + (r.winfo_height() - dlg.winfo_reqheight()) // 3
+        dlg.geometry(f"+{max(0, x)}+{max(0, y)}")
+        dlg.attributes("-topmost", True)
+        dlg.lift()
+        dlg.focus_force()
+        try:
+            dlg.grab_set()
+        except tk.TclError:
+            pass
+        r.bell()
+        self.approval_window = dlg
+        r.wait_window(dlg)
+        self.approval_window = None
+        return result["allow"]
 
     def show_devices(self):
         win = tk.Toplevel(self.root)
@@ -505,16 +563,212 @@ class App:
                     self.log(f"⚠  {name} contains a program file. Only open it if you trust the source.")
                 elif kind == "torrent_error":
                     self.log(f"!  Download failed  {name}: {extra}")
+                elif kind == "far_done":
+                    st = extra
+                    if name == "send":
+                        self.log(f"⇄  Sent to a far laptop  {st.get('name', '')}  ({st.get('size', '')})")
+                    else:
+                        self.log(f"⇄  Received from a far laptop  {', '.join(st.get('saved', []))}  ({st.get('size', '')})")
+                        if st.get("risky"):
+                            self.log("⚠  It contains a program file. Only open it if you trust the sender.")
+                elif kind == "far_failed":
+                    self.log(f"!  Far transfer failed: {extra}")
                 elif kind == "error":
                     self.log(f"!  Couldn't add {name}: {extra}")
         except queue.Empty:
             pass
         self.root.after(200, self.poll)
 
+    # ---------- far transfers (laptop to laptop over the internet) ----------
+    def far_ready(self):
+        if far.find_croc():
+            return True
+        messagebox.showwarning(NAME, "Far transfers aren't available in this copy of WinDrop "
+                                     "(the transfer engine is missing). Please reinstall the latest version.")
+        return False
+
+    def far_send(self):
+        if not self.far_ready():
+            return
+        paths = filedialog.askopenfilenames(title="Choose files to send to a far laptop")
+        if not paths:
+            return
+        job = far.FarJob("send", far.new_code(), paths=paths, relay=self.cfg.get("far_relay"),
+                         on_event=lambda *e: self.events.put(e)).start()
+        self.far_jobs.append(job)
+        FarWindow(self, job, paths)
+
+    def far_receive(self):
+        if not self.far_ready():
+            return
+        code = ask_code(self.root)
+        if not code:
+            return
+        job = far.FarJob("receive", code, out_dir=FAR_INBOX, work_dir=FAR_WORK, relay=self.cfg.get("far_relay"),
+                         on_event=lambda *e: self.events.put(e)).start()
+        self.far_jobs.append(job)
+        FarWindow(self, job)
+
     def quit(self):
+        active = [j for j in self.far_jobs if not j.finished]
+        if active and not messagebox.askyesno(NAME, "A far transfer is still running.\n\nQuit anyway? "
+                                                     "It can continue later if both sides use the same code again."):
+            return
+        for j in active:
+            j.cancel()
         self.server.stop()
         self.torrents.stop()
         self.root.destroy()
+
+
+def on_phone_hotspot():
+    """iPhone hotspots hand out 172.20.10.x; Android hotspots commonly 192.168.43.x."""
+    return any(ip.startswith("172.20.10.") or ip.startswith("192.168.43.") for ip in local_ips())
+
+
+def ask_code(root):
+    """Small window asking for the code the sender gave you. Returns the cleaned code or None."""
+    dlg = tk.Toplevel(root)
+    dlg.title(f"{NAME} · Receive with a code")
+    dlg.configure(bg=BG, padx=22, pady=18)
+    dlg.resizable(False, False)
+    dlg.transient(root)
+    tk.Label(dlg, text="Receive from a far laptop", bg=BG, fg=INK, font=("Segoe UI Semibold", 14)).pack(anchor="w")
+    tk.Label(dlg, text="Type the code shown on the sender's WinDrop, for example 4821-amber-river-stone.",
+             bg=BG, fg=DIM, font=("Segoe UI", 9), wraplength=360, justify="left").pack(anchor="w", pady=(4, 10))
+    var = tk.StringVar()
+    entry = ttk.Entry(dlg, textvariable=var, font=("Consolas", 14), width=28)
+    entry.pack(fill="x", ipady=4)
+    err = tk.Label(dlg, text="", bg=BG, fg="#b42318", font=("Segoe UI", 9))
+    err.pack(anchor="w", pady=(4, 0))
+    result = {"code": None}
+
+    def go(event=None):
+        code = far.clean_code(var.get())
+        if not code:
+            err.config(text="Enter the full code from the sender (at least 6 letters or numbers).")
+            return
+        result["code"] = code
+        dlg.destroy()
+    row = tk.Frame(dlg, bg=BG)
+    row.pack(fill="x", pady=(10, 0))
+    ttk.Button(row, text="Cancel", command=dlg.destroy).pack(side="right")
+    ttk.Button(row, text="Receive", style="Accent.TButton", command=go).pack(side="right", padx=(0, 8))
+    entry.bind("<Return>", go)
+    var.trace_add("write", lambda *a: err.config(text=""))
+    entry.focus_set()
+    dlg.grab_set()
+    root.wait_window(dlg)
+    return result["code"]
+
+
+class FarWindow:
+    """Shows one far transfer: the code to share (sending), progress, and the result."""
+    VERB = {"send": "Sending", "receive": "Receiving"}
+
+    def __init__(self, app, job, paths=None):
+        self.app, self.job = app, job
+        w = self.win = tk.Toplevel(app.root)
+        w.title(f"{NAME} · {'Send to a far laptop' if job.kind == 'send' else 'Receive from a far laptop'}")
+        w.configure(bg=BG, padx=22, pady=18)
+        w.resizable(False, False)
+        try:
+            w.iconbitmap(resource("assets/icon.ico"))
+        except Exception:
+            pass
+        title = "Send to a far laptop" if job.kind == "send" else "Receiving from a far laptop"
+        tk.Label(w, text=title, bg=BG, fg=INK, font=("Segoe UI Semibold", 14)).pack(anchor="w")
+        if job.kind == "send":
+            names = [Path(p).name for p in paths]
+            what = names[0] if len(names) == 1 else f"{len(names)} files"
+            tk.Label(w, text=f"{what}\n\nOn the other laptop, open WinDrop, click “Receive with a code” and type:",
+                     bg=BG, fg=DIM, font=("Segoe UI", 9), wraplength=380, justify="left").pack(anchor="w", pady=(4, 8))
+            row = tk.Frame(w, bg=BG)
+            row.pack(fill="x")
+            code = tk.Entry(row, font=("Consolas", 14, "bold"), relief="flat", justify="center",
+                            width=len(job.code) + 2, readonlybackground=CARD, fg=INK,
+                            highlightthickness=1, highlightbackground="#e3e5ea")
+            code.insert(0, job.code)
+            code.config(state="readonly")
+            code.pack(side="left", fill="x", expand=True, ipady=8)
+            self.copy_btn = ttk.Button(row, text="Copy", command=self.copy)
+            self.copy_btn.pack(side="left", padx=(8, 0))
+            if on_phone_hotspot():
+                tk.Label(w, text="⚠ This laptop is on a phone hotspot, so sending uses mobile data (the whole file "
+                                 "size). Connect to home Wi-Fi to avoid that.", bg=WARN_BG, fg=WARN_INK,
+                         font=("Segoe UI", 9), wraplength=370, justify="left", padx=8, pady=6).pack(fill="x", pady=(10, 0))
+        else:
+            tk.Label(w, text=f"Code: {job.code}", bg=BG, fg=DIM, font=("Consolas", 10)).pack(anchor="w", pady=(4, 0))
+        style = ttk.Style(w)
+        style.configure("Far.Horizontal.TProgressbar", background=BLUE, troughcolor="#e3e5ea",
+                        bordercolor="#e3e5ea", lightcolor=BLUE, darkcolor=BLUE)
+        self.bar = ttk.Progressbar(w, length=380, maximum=100, style="Far.Horizontal.TProgressbar")
+        self.bar.pack(fill="x", pady=(14, 6))
+        self.status = tk.Label(w, text="Connecting…", bg=BG, fg=INK, font=("Segoe UI", 10), wraplength=380,
+                               justify="left", anchor="w")
+        self.status.pack(fill="x")
+        self.detail = tk.Label(w, text="", bg=BG, fg=DIM, font=("Segoe UI", 9), anchor="w")
+        self.detail.pack(fill="x", pady=(2, 0))
+        tk.Label(w, text="Keep both laptops on and connected until it finishes. If the connection drops, "
+                         "it continues automatically.", bg=BG, fg=DIM, font=("Segoe UI", 8), wraplength=380,
+                 justify="left").pack(anchor="w", pady=(10, 0))
+        self.buttons = tk.Frame(w, bg=BG)
+        self.buttons.pack(fill="x", pady=(12, 0))
+        self.cancel_btn = ttk.Button(self.buttons, text="Cancel", command=self.cancel)
+        self.cancel_btn.pack(side="right")
+        w.protocol("WM_DELETE_WINDOW", self.close)
+        self.tick()
+
+    def copy(self):
+        self.win.clipboard_clear()
+        self.win.clipboard_append(self.job.code)
+        self.copy_btn.config(text="Copied ✓")
+        self.win.after(1500, lambda: self.copy_btn.winfo_exists() and self.copy_btn.config(text="Copy"))
+
+    def cancel(self):
+        if self.job.finished:
+            return self.win.destroy()
+        if messagebox.askyesno(NAME, "Stop this transfer?", parent=self.win):
+            self.job.cancel()
+
+    def close(self):
+        if self.job.finished:
+            self.win.destroy()
+        else:
+            self.cancel()
+
+    def tick(self):
+        if not self.win.winfo_exists():
+            return
+        s = self.job.snapshot()
+        phase, pct = s["phase"], s["pct"]
+        verb = self.VERB[self.job.kind]
+        text = {
+            "starting": "Connecting…", "connecting": "Connecting…",
+            "preparing": f"Getting the file ready… {pct}%",
+            "connected": "Connected. Starting…",
+            "transferring": f"{verb}… {pct}%",
+            "verifying": "Checking the file arrived intact…",
+            "checking": "Checking what was already received…",
+            "done": ("Sent! The other laptop has the file." if self.job.kind == "send"
+                     else "Received and saved in Downloads\\WinDrop\\From far away."),
+            "cancelled": "Cancelled.",
+        }.get(phase, s["note"] or phase)
+        if phase in ("waiting", "retrying", "failed"):
+            text = s["note"]
+        self.status.config(text=text)
+        self.bar["value"] = pct if phase in ("transferring", "done", "preparing") else (100 if phase == "verifying" else 0)
+        bits = [b for b in (s["name"], s["size"], s["speed"]) if b]
+        self.detail.config(text="  ·  ".join(bits))
+        if self.job.finished:
+            self.cancel_btn.config(text="Close")
+            if phase == "done" and self.job.kind == "receive":
+                ttk.Button(self.buttons, text="Open folder", style="Accent.TButton",
+                           command=lambda: open_folder(FAR_INBOX)).pack(side="right", padx=(0, 8))
+                if s.get("risky"):
+                    self.detail.config(text="⚠ Contains a program file. Only open it if you trust the sender.")
+            return
+        self.win.after(300, self.tick)
 
 
 def main():

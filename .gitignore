@@ -226,3 +226,5 @@ aria2tmp/
 storebuild/
 build-store/
 msix/
+croc.zip
+croctmp/

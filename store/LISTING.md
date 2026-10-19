@@ -40,6 +40,9 @@ Partner Center: https://partner.microsoft.com/dashboard/apps-and-games/overview
 > PRIVATE BY DESIGN
 > Files travel directly over your own Wi-Fi or iPhone hotspot. Nothing is uploaded to the cloud, there are no accounts, and no data is collected. Transfers don't use mobile data.
 >
+> SEND TO A LAPTOP ANYWHERE
+> Click "Send to a far laptop", share the short code, and a friend in another city or country receives your files on their PC. Encrypted end to end, any size, and it picks up where it left off if the connection drops.
+>
 > SECURE
 > Every new phone must be approved on your PC before it can connect. The QR code contains a long private key, repeated wrong attempts are blocked, and WinDrop X refuses connections on public networks unless you choose to trust them.
 >
@@ -52,7 +55,7 @@ Partner Center: https://partner.microsoft.com/dashboard/apps-and-games/overview
 > Tip: add the page to your iPhone Home Screen to open it like an app.
 
 **What's new in this version:**
-> First Microsoft Store release: device approval, resumable transfers, and live transfer speed.
+> New: send files to a laptop anywhere in the world with a short code, encrypted end to end and resumable. Clearer Allow / Don't allow approval window.
 
 **Product features** (one per line, max 20):
 > Send photos and videos from iPhone to PC
@@ -63,6 +66,7 @@ Partner Center: https://partner.microsoft.com/dashboard/apps-and-games/overview
 > Works over Wi-Fi or iPhone hotspot
 > No mobile data, no cloud, no account
 > New devices need your approval
+> Send files to a laptop anywhere with a short code
 
 **Search terms** (max 7):
 > airdrop for windows, iphone to pc, file transfer, wifi transfer, send photos to pc, iphone file sharing, qr code transfer
